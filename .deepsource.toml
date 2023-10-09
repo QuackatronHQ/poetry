@@ -5,6 +5,12 @@ test_patterns = ["tests/**"]
 exclude_patterns = ["docs/**"]
 
 [[analyzers]]
+name = "javascript"
+
+  [analyzers.meta]
+  environment = ["nodejs"]
+
+[[analyzers]]
 name = "python"
 
   [analyzers.meta]
