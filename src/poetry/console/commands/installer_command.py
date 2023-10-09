@@ -25,7 +25,8 @@ class InstallerCommand(GroupCommand, EnvCommand):
 
     @property
     def installer(self) -> Installer:
-        assert self._installer is not None
+        if self._installer is None:
+            raise AssertionError
         return self._installer
 
     def set_installer(self, installer: Installer) -> None:

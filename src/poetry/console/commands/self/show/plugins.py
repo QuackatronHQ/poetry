@@ -73,7 +73,8 @@ commands respectively.
             for entry_point in PluginManager(group).get_plugin_entry_points(
                 env=system_env
             ):
-                assert entry_point.dist is not None
+                if entry_point.dist is None:
+                    raise AssertionError
 
                 package = packages_by_name[canonicalize_name(entry_point.dist.name)]
 

@@ -114,8 +114,10 @@ class Incompatibility:
 
             depender = self._terms[0]
             dependee = self._terms[1]
-            assert depender.is_positive()
-            assert not dependee.is_positive()
+            if not depender.is_positive():
+                raise AssertionError
+            if dependee.is_positive():
+                raise AssertionError
 
             return (
                 f"{self._terse(depender, allow_every=True)} depends on"
@@ -123,7 +125,8 @@ class Incompatibility:
             )
         elif isinstance(self._cause, PythonCause):
             assert len(self._terms) == 1
-            assert self._terms[0].is_positive()
+            if not self._terms[0].is_positive():
+                raise AssertionError
 
             text = f"{self._terse(self._terms[0], allow_every=True)} requires "
             text += f"Python {self._cause.python_version}"
@@ -131,7 +134,8 @@ class Incompatibility:
             return text
         elif isinstance(self._cause, PlatformCause):
             assert len(self._terms) == 1
-            assert self._terms[0].is_positive()
+            if not self._terms[0].is_positive():
+                raise AssertionError
 
             text = f"{self._terse(self._terms[0], allow_every=True)} requires "
             text += f"platform {self._cause.platform}"
@@ -139,7 +143,8 @@ class Incompatibility:
             return text
         elif isinstance(self._cause, NoVersionsCause):
             assert len(self._terms) == 1
-            assert self._terms[0].is_positive()
+            if not self._terms[0].is_positive():
+                raise AssertionError
 
             return (
                 f"no versions of {self._terms[0].dependency.name} match"
@@ -147,8 +152,10 @@ class Incompatibility:
             )
         elif isinstance(self._cause, RootCause):
             assert len(self._terms) == 1
-            assert not self._terms[0].is_positive()
-            assert self._terms[0].dependency.is_root
+            if self._terms[0].is_positive():
+                raise AssertionError
+            if not self._terms[0].dependency.is_root:
+                raise AssertionError
 
             return (
                 f"{self._terms[0].dependency.name} is"

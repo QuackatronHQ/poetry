@@ -18,7 +18,8 @@ class EnvCommand(Command):
 
     @property
     def env(self) -> Env:
-        assert self._env is not None
+        if self._env is None:
+            raise AssertionError
         return self._env
 
     def set_env(self, env: Env) -> None:

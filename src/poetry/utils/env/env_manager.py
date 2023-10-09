@@ -685,7 +685,8 @@ class EnvManager:
 
     @classmethod
     def remove_venv(cls, path: Path) -> None:
-        assert path.is_dir()
+        if not path.is_dir():
+            raise AssertionError
         try:
             remove_directory(path)
             return

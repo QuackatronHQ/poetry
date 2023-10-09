@@ -246,9 +246,11 @@ class ArtifactCache:
         filename: str | None = None,
         env: Env | None = None,
     ) -> Path | None:
-        assert strict or env is not None
+        if not (strict or env is not None):
+            raise AssertionError
         # implication "strict -> filename should not be None"
-        assert not strict or filename is not None
+        if not (not strict or filename is not None):
+            raise AssertionError
 
         archives = self._get_cached_archives(cache_dir)
         if not archives:

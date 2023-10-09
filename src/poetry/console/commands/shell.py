@@ -37,7 +37,8 @@ If one doesn't exist yet, it will be created.
 
         # Be sure that we have the right type of environment.
         env = self.env
-        assert env.is_venv()
+        if not env.is_venv():
+            raise AssertionError
         env = cast("VirtualEnv", env)
 
         # Setting this to avoid spawning unnecessary nested shells
