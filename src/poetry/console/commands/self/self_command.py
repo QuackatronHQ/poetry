@@ -46,7 +46,8 @@ class SelfCommand(InstallerCommand):
     def env(self) -> Env:
         if not isinstance(self._env, SystemEnv):
             self.reset_env()
-        assert self._env is not None
+        if self._env is None:
+            raise AssertionError
         return self._env
 
     @property
@@ -92,7 +93,8 @@ class SelfCommand(InstallerCommand):
         if self._poetry is None:
             self.reset_poetry()
 
-        assert self._poetry is not None
+        if self._poetry is None:
+            raise AssertionError
         return self._poetry
 
     def _system_project_handle(self) -> int:

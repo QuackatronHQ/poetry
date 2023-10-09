@@ -554,7 +554,8 @@ class Executor:
             archive = self._prepare_archive(operation)
             cleanup_archive = True
         elif package.source_type == "url":
-            assert package.source_url is not None
+            if package.source_url is None:
+                raise AssertionError
             archive = self._download_link(operation, Link(package.source_url))
         else:
             archive = self._download(operation)
@@ -614,7 +615,8 @@ class Executor:
         )
         self._write(operation, message)
 
-        assert package.source_url is not None
+        if package.source_url is None:
+            raise AssertionError
         archive = Path(package.source_url)
         if package.source_subdirectory:
             archive = archive / package.source_subdirectory
@@ -631,7 +633,8 @@ class Executor:
         from poetry.vcs.git import Git
 
         package = operation.package
-        assert package.source_url is not None
+        if package.source_url is None:
+            raise AssertionError
 
         if package.source_resolved_reference and not package.develop:
             # Only cache git archives when we know precise reference hash,
@@ -696,7 +699,8 @@ class Executor:
         )
         self._write(operation, message)
 
-        assert package.source_url is not None
+        if package.source_url is None:
+            raise AssertionError
         if package.root_dir:
             req = package.root_dir / package.source_url
         else:
@@ -960,7 +964,8 @@ class Executor:
     def _create_file_url_reference(self, package: Package) -> dict[str, Any]:
         archive_info = self._get_archive_info(package)
 
-        assert package.source_url is not None
+        if package.source_url is None:
+            raise AssertionError
         return {
             "url": Path(package.source_url).as_uri(),
             "archive_info": archive_info,
@@ -972,7 +977,8 @@ class Executor:
         if package.develop:
             dir_info["editable"] = True
 
-        assert package.source_url is not None
+        if package.source_url is None:
+            raise AssertionError
         return {
             "url": Path(package.source_url).as_uri(),
             "dir_info": dir_info,

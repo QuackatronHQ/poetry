@@ -23,5 +23,6 @@ class ApplicationPlugin(BasePlugin):
 
     def activate(self, application: Application) -> None:
         for command in self.commands:
-            assert command.name is not None
+            if command.name is None:
+                raise AssertionError
             application.command_loader.register_factory(command.name, command)

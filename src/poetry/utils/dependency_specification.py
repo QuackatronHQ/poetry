@@ -37,15 +37,18 @@ def dependency_to_specification(
 ) -> BaseSpec:
     if dependency.is_vcs():
         dependency = cast("VCSDependency", dependency)
-        assert dependency.source_url is not None
+        if dependency.source_url is None:
+            raise AssertionError
         specification[dependency.vcs] = dependency.source_url
         if dependency.reference:
             specification["rev"] = dependency.reference
     elif dependency.is_file() or dependency.is_directory():
-        assert dependency.source_url is not None
+        if dependency.source_url is None:
+            raise AssertionError
         specification["path"] = dependency.source_url
     elif dependency.is_url():
-        assert dependency.source_url is not None
+        if dependency.source_url is None:
+            raise AssertionError
         specification["url"] = dependency.source_url
     elif dependency.pretty_constraint != "*" and not dependency.constraint.is_empty():
         specification["version"] = dependency.pretty_constraint
@@ -150,7 +153,8 @@ class RequirementsParser:
 
         if url_parsed.scheme in ["http", "https"]:
             package = self._direct_origin.get_package_from_url(requirement)
-            assert package.source_url is not None
+            if package.source_url is None:
+                raise AssertionError
             return {"name": package.name, "url": package.source_url}
 
         return None
