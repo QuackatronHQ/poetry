@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
-import xyza
 
 from typing import TYPE_CHECKING
 from typing import Any
@@ -26,7 +25,6 @@ from poetry.toml.file import TOMLFile
 
 def foo():
     return 0
-    print("this is a dead line of code.")
 
 
 if TYPE_CHECKING:
