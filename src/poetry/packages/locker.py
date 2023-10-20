@@ -210,7 +210,8 @@ class Locker:
                 if package.source_type == "directory":
                     # root dir should be the source of the package relative to the lock
                     # path
-                    assert package.source_url is not None
+                    if package.source_url is None:
+                        raise AssertionError
                     root_dir = Path(package.source_url)
 
                 if isinstance(constraint, list):
