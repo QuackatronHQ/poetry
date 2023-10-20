@@ -79,7 +79,8 @@ class Chooser:
 
     def _get_links(self, package: Package) -> list[Link]:
         if package.source_type:
-            assert package.source_reference is not None
+            if package.source_reference is None:
+                raise AssertionError
             repository = self._pool.repository(package.source_reference)
 
         elif not self._pool.has_repository("pypi"):
@@ -98,7 +99,8 @@ class Chooser:
                 selected_links.append(link)
                 continue
 
-            assert link.hash_name is not None
+            if link.hash_name is None:
+                raise AssertionError
             h = link.hash_name + ":" + link.hash
             if (
                 h not in hashes
@@ -189,7 +191,8 @@ class Chooser:
         if not link.hash:
             return True
 
-        assert link.hash_name is not None
+        if link.hash_name is None:
+            raise AssertionError
         h = link.hash_name + ":" + link.hash
 
         return h in {f["hash"] for f in package.files}
