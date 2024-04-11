@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 
@@ -10,6 +11,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from build import ProjectBuilder
 from poetry.core.packages.utils.link import Link
 
 from poetry.factory import Factory
@@ -48,7 +50,9 @@ def setup(mocker: MockerFixture, pool: RepositoryPool) -> None:
     mocker.patch.object(Factory, "create_pool", return_value=pool)
 
 
-def test_isolated_env_install_success(pool: RepositoryPool) -> None:
+def test_isolated_env_install_success(
+    pool: RepositoryPool, mock_file_downloads: None
+) -> None:
     with ephemeral_environment(Path(sys.executable)) as venv:
         env = IsolatedEnv(venv, pool)
         assert "poetry-core" not in venv.run("pip", "freeze")
@@ -88,6 +92,7 @@ def test_prepare_sdist(
     config_cache_dir: Path,
     artifact_cache: ArtifactCache,
     fixture_dir: FixtureDirGetter,
+    mock_file_downloads: None,
 ) -> None:
     chef = Chef(
         artifact_cache, EnvManager.get_system_env(), Factory.create_pool(config)
@@ -106,6 +111,7 @@ def test_prepare_directory(
     config_cache_dir: Path,
     artifact_cache: ArtifactCache,
     fixture_dir: FixtureDirGetter,
+    mock_file_downloads: None,
 ) -> None:
     chef = Chef(
         artifact_cache, EnvManager.get_system_env(), Factory.create_pool(config)
@@ -121,6 +127,7 @@ def test_prepare_directory(
     os.unlink(wheel)
 
 
+@pytest.mark.network
 def test_prepare_directory_with_extensions(
     config: Config,
     config_cache_dir: Path,
@@ -145,6 +152,7 @@ def test_prepare_directory_editable(
     config_cache_dir: Path,
     artifact_cache: ArtifactCache,
     fixture_dir: FixtureDirGetter,
+    mock_file_downloads: None,
 ) -> None:
     chef = Chef(
         artifact_cache, EnvManager.get_system_env(), Factory.create_pool(config)
@@ -159,5 +167,51 @@ def test_prepare_directory_editable(
     with ZipFile(wheel) as z:
         assert "simple_project.pth" in z.namelist()
 
+    # cleanup generated tmp dir artifact
+    os.unlink(wheel)
+
+
+@pytest.mark.network
+def test_prepare_directory_script(
+    config: Config,
+    config_cache_dir: Path,
+    artifact_cache: ArtifactCache,
+    fixture_dir: FixtureDirGetter,
+    tmp_path: Path,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Building a project that requires calling a script from its build_requires.
+    """
+    # make sure the scripts project is on the same drive (for Windows tests in CI)
+    scripts_dir = tmp_path / "scripts"
+    shutil.copytree(fixture_dir("scripts"), scripts_dir)
+
+    orig_build_system_requires = ProjectBuilder.build_system_requires
+
+    class CustomPropertyMock:
+        def __get__(
+            self, obj: ProjectBuilder, obj_type: type[ProjectBuilder] | None = None
+        ) -> set[str]:
+            assert isinstance(obj, ProjectBuilder)
+            return {
+                req.replace("<scripts>", f"scripts @ {scripts_dir.as_uri()}")
+                for req in orig_build_system_requires.fget(obj)  # type: ignore[attr-defined]
+            }
+
+    mocker.patch(
+        "build.ProjectBuilder.build_system_requires",
+        new_callable=CustomPropertyMock,
+    )
+    chef = Chef(
+        artifact_cache, EnvManager.get_system_env(), Factory.create_pool(config)
+    )
+    archive = fixture_dir("project_with_setup_calls_script").resolve()
+
+    wheel = chef.prepare(archive)
+
+    assert wheel.name == "project_with_setup_calls_script-0.1.2-py3-none-any.whl"
+
+    assert wheel.parent.parent == Path(tempfile.gettempdir())
     # cleanup generated tmp dir artifact
     os.unlink(wheel)

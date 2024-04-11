@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import itertools
 import json
+import re
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,8 +45,6 @@ if TYPE_CHECKING:
     from poetry.utils.env import Env
     from tests.conftest import Config
     from tests.types import FixtureDirGetter
-
-RESERVED_PACKAGES = ("pip", "setuptools", "wheel")
 
 
 class Executor(BaseExecutor):
@@ -100,6 +98,7 @@ class Locker(BaseLocker):
         self._lock = lock_path / "poetry.lock"
         self._written_data = None
         self._locked = False
+        self._fresh = True
         self._lock_data = None
         self._content_hash = self._get_content_hash()
 
@@ -124,8 +123,13 @@ class Locker(BaseLocker):
     def is_locked(self) -> bool:
         return self._locked
 
+    def fresh(self, is_fresh: bool = True) -> Locker:
+        self._fresh = is_fresh
+
+        return self
+
     def is_fresh(self) -> bool:
-        return True
+        return self._fresh
 
     def _get_content_hash(self) -> str:
         return "123456789"
@@ -209,6 +213,18 @@ def test_run_no_dependencies(installer: Installer, locker: Locker) -> None:
 
     expected = fixture("no-dependencies")
     assert locker.written_data == expected
+
+
+def test_not_fresh_lock(installer: Installer, locker: Locker) -> None:
+    locker.locked().fresh(False)
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "pyproject.toml changed significantly since poetry.lock was last generated. "
+            "Run `poetry lock [--no-update]` to fix the lock file."
+        ),
+    ):
+        installer.run()
 
 
 def test_run_with_dependencies(
@@ -485,7 +501,7 @@ def test_run_install_does_not_remove_locked_packages_if_installed_but_not_requir
     assert installer.executor.removals_count == 0
 
 
-def test_run_install_removes_locked_packages_if_installed_and_synchronization_is_required(  # noqa: E501
+def test_run_install_removes_locked_packages_if_installed_and_synchronization_is_required(
     installer: Installer,
     locker: Locker,
     repo: Repository,
@@ -628,12 +644,7 @@ def test_run_install_removes_no_longer_locked_packages_if_installed(
 
 @pytest.mark.parametrize(
     "managed_reserved_package_names",
-    itertools.chain(
-        [()],
-        itertools.permutations(RESERVED_PACKAGES, 1),
-        itertools.permutations(RESERVED_PACKAGES, 2),
-        [RESERVED_PACKAGES],
-    ),
+    [(), ("pip",)],
 )
 def test_run_install_with_synchronization(
     managed_reserved_package_names: tuple[str, ...],
@@ -647,16 +658,12 @@ def test_run_install_with_synchronization(
     package_b = get_package("b", "1.1")
     package_c = get_package("c", "1.2")
     package_pip = get_package("pip", "20.0.0")
-    package_setuptools = get_package("setuptools", "20.0.0")
-    package_wheel = get_package("wheel", "20.0.0")
 
     all_packages = [
         package_a,
         package_b,
         package_c,
         package_pip,
-        package_setuptools,
-        package_wheel,
     ]
 
     managed_reserved_packages = [
@@ -1021,75 +1028,22 @@ def test_run_with_dependencies_nested_extras(
     assert locker.written_data == expected
 
 
-def test_run_does_not_install_extras_if_not_requested(
-    installer: Installer, locker: Locker, repo: Repository, package: ProjectPackage
-) -> None:
-    package.extras[canonicalize_name("foo")] = [get_dependency("D")]
-    package_a = get_package("A", "1.0")
-    package_b = get_package("B", "1.0")
-    package_c = get_package("C", "1.0")
-    package_d = get_package("D", "1.1")
-
-    repo.add_package(package_a)
-    repo.add_package(package_b)
-    repo.add_package(package_c)
-    repo.add_package(package_d)
-
-    package.add_dependency(Factory.create_dependency("A", "^1.0"))
-    package.add_dependency(Factory.create_dependency("B", "^1.0"))
-    package.add_dependency(Factory.create_dependency("C", "^1.0"))
-    package.add_dependency(
-        Factory.create_dependency("D", {"version": "^1.0", "optional": True})
-    )
-
-    result = installer.run()
-    assert result == 0
-
-    expected = fixture("extras")
-    # Extras are pinned in lock
-    assert locker.written_data == expected
-
-    # But should not be installed
-    assert installer.executor.installations_count == 3  # A, B, C
-
-
-def test_run_installs_extras_if_requested(
-    installer: Installer, locker: Locker, repo: Repository, package: ProjectPackage
-) -> None:
-    package.extras[canonicalize_name("foo")] = [get_dependency("D")]
-    package_a = get_package("A", "1.0")
-    package_b = get_package("B", "1.0")
-    package_c = get_package("C", "1.0")
-    package_d = get_package("D", "1.1")
-
-    repo.add_package(package_a)
-    repo.add_package(package_b)
-    repo.add_package(package_c)
-    repo.add_package(package_d)
-
-    package.add_dependency(Factory.create_dependency("A", "^1.0"))
-    package.add_dependency(Factory.create_dependency("B", "^1.0"))
-    package.add_dependency(Factory.create_dependency("C", "^1.0"))
-    package.add_dependency(
-        Factory.create_dependency("D", {"version": "^1.0", "optional": True})
-    )
-
-    installer.extras(["foo"])
-    result = installer.run()
-    assert result == 0
-
-    # Extras are pinned in lock
-    expected = fixture("extras")
-    assert locker.written_data == expected
-
-    # But should not be installed
-    assert installer.executor.installations_count == 4  # A, B, C, D
-
-
+@pytest.mark.parametrize("is_locked", [False, True])
+@pytest.mark.parametrize("is_installed", [False, True])
+@pytest.mark.parametrize("with_extras", [False, True])
+@pytest.mark.parametrize("do_sync", [False, True])
 def test_run_installs_extras_with_deps_if_requested(
-    installer: Installer, locker: Locker, repo: Repository, package: ProjectPackage
+    installer: Installer,
+    locker: Locker,
+    repo: Repository,
+    installed: CustomInstalledRepository,
+    package: ProjectPackage,
+    is_locked: bool,
+    is_installed: bool,
+    with_extras: bool,
+    do_sync: bool,
 ) -> None:
-    package.extras[canonicalize_name("foo")] = [get_dependency("C")]
+    package.extras = {canonicalize_name("foo"): [get_dependency("C")]}
     package_a = get_package("A", "1.0")
     package_b = get_package("B", "1.0")
     package_c = get_package("C", "1.0")
@@ -1108,50 +1062,41 @@ def test_run_installs_extras_with_deps_if_requested(
 
     package_c.add_dependency(Factory.create_dependency("D", "^1.0"))
 
-    installer.extras(["foo"])
+    if is_locked:
+        locker.locked(True)
+        locker.mock_lock_data(fixture("extras-with-dependencies"))
+
+    if is_installed:
+        installed.add_package(package_a)
+        installed.add_package(package_b)
+        installed.add_package(package_c)
+        installed.add_package(package_d)
+
+    if with_extras:
+        installer.extras(["foo"])
+    installer.requires_synchronization(do_sync)
     result = installer.run()
     assert result == 0
 
-    expected = fixture("extras-with-dependencies")
+    if not is_locked:
+        assert locker.written_data == fixture("extras-with-dependencies")
 
-    # Extras are pinned in lock
-    assert locker.written_data == expected
+    if with_extras:
+        # A, B, C, D
+        expected_installations_count = 0 if is_installed else 4
+        expected_removals_count = 0
+    else:
+        # A, B
+        expected_installations_count = 0 if is_installed else 2
+        # We only want to uninstall extras if we do a "poetry install" without extras,
+        # not if we do a "poetry update" or "poetry add".
+        expected_removals_count = 2 if is_installed and is_locked else 0
 
-    # But should not be installed
-    assert installer.executor.installations_count == 4  # A, B, C, D
-
-
-def test_run_installs_extras_with_deps_if_requested_locked(
-    installer: Installer, locker: Locker, repo: Repository, package: ProjectPackage
-) -> None:
-    locker.locked(True)
-    locker.mock_lock_data(fixture("extras-with-dependencies"))
-    package.extras[canonicalize_name("foo")] = [get_dependency("C")]
-    package_a = get_package("A", "1.0")
-    package_b = get_package("B", "1.0")
-    package_c = get_package("C", "1.0")
-    package_d = get_package("D", "1.1")
-
-    repo.add_package(package_a)
-    repo.add_package(package_b)
-    repo.add_package(package_c)
-    repo.add_package(package_d)
-
-    package.add_dependency(Factory.create_dependency("A", "^1.0"))
-    package.add_dependency(Factory.create_dependency("B", "^1.0"))
-    package.add_dependency(
-        Factory.create_dependency("C", {"version": "^1.0", "optional": True})
-    )
-
-    package_c.add_dependency(Factory.create_dependency("D", "^1.0"))
-
-    installer.extras(["foo"])
-    result = installer.run()
-    assert result == 0
-
-    assert installer.executor.installations_count == 4  # A, B, C, D
+    assert installer.executor.installations_count == expected_installations_count
+    assert installer.executor.removals_count == expected_removals_count
 
 
+@pytest.mark.network
 def test_installer_with_pypi_repository(
     package: ProjectPackage,
     locker: Locker,
@@ -1506,9 +1451,9 @@ def test_run_update_with_locked_extras(
         }
     )
     package_a = get_package("A", "1.0")
-    package_a.extras[canonicalize_name("foo")] = [get_dependency("B")]
+    package_a.extras = {canonicalize_name("foo"): [get_dependency("B")]}
     b_dependency = get_dependency("B", "^1.0", optional=True)
-    b_dependency.in_extras.append(canonicalize_name("foo"))
+    b_dependency._in_extras = [canonicalize_name("foo")]
     c_dependency = get_dependency("C", "^1.0")
     c_dependency.python_versions = "~2.7"
     package_a.add_dependency(b_dependency)
@@ -1851,7 +1796,7 @@ def test_run_install_duplicate_dependencies_different_constraints_with_lock_upda
 @pytest.mark.skip(
     "This is not working at the moment due to limitations in the resolver"
 )
-def test_installer_test_solver_finds_compatible_package_for_dependency_python_not_fully_compatible_with_package_python(  # noqa: E501
+def test_installer_test_solver_finds_compatible_package_for_dependency_python_not_fully_compatible_with_package_python(
     installer: Installer,
     locker: Locker,
     repo: Repository,
@@ -1880,7 +1825,7 @@ def test_installer_test_solver_finds_compatible_package_for_dependency_python_no
     assert installer.executor.installations_count == 1
 
 
-def test_installer_required_extras_should_not_be_removed_when_updating_single_dependency(  # noqa: E501
+def test_installer_required_extras_should_not_be_removed_when_updating_single_dependency(
     installer: Installer,
     locker: Locker,
     repo: Repository,
@@ -1947,7 +1892,7 @@ def test_installer_required_extras_should_not_be_removed_when_updating_single_de
     assert installer.executor.removals_count == 0
 
 
-def test_installer_required_extras_should_not_be_removed_when_updating_single_dependency_pypi_repository(  # noqa: E501
+def test_installer_required_extras_should_not_be_removed_when_updating_single_dependency_pypi_repository(
     locker: Locker,
     repo: Repository,
     package: ProjectPackage,

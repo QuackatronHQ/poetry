@@ -29,9 +29,9 @@ from poetry.utils.env import ephemeral_environment
 
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
+    from tests.types import FixtureDirGetter
 
     from poetry.poetry import Poetry
-    from tests.types import FixtureDirGetter
 
 
 @pytest.fixture()
@@ -84,6 +84,20 @@ def tmp_venv(tmp_path: Path, env_manager: EnvManager) -> Iterator[VirtualEnv]:
     yield venv
 
     shutil.rmtree(str(venv.path))
+
+
+@pytest.fixture()
+def bad_scripts_no_colon(fixture_dir: FixtureDirGetter) -> Poetry:
+    poetry = Factory().create_poetry(fixture_dir("bad_scripts_project/no_colon"))
+
+    return poetry
+
+
+@pytest.fixture()
+def bad_scripts_too_many_colon(fixture_dir: FixtureDirGetter) -> Poetry:
+    poetry = Factory().create_poetry(fixture_dir("bad_scripts_project/too_many_colon"))
+
+    return poetry
 
 
 def test_builder_installs_proper_files_for_standard_packages(
@@ -223,6 +237,7 @@ def test_builder_falls_back_on_setup_and_pip_for_packages_with_build_scripts(
     assert [] == env.executed
 
 
+@pytest.mark.network
 def test_builder_setup_generation_runs_with_pip_editable(
     fixture_dir: FixtureDirGetter, tmp_path: Path
 ) -> None:
@@ -339,3 +354,30 @@ def test_builder_should_execute_build_scripts(
     assert [
         ["python", str(extended_without_setup_poetry.file.path.parent / "build.py")]
     ] == env.executed
+
+
+def test_builder_catches_bad_scripts_no_colon(
+    bad_scripts_no_colon: Poetry, tmp_venv: VirtualEnv
+) -> None:
+    builder = EditableBuilder(bad_scripts_no_colon, tmp_venv, NullIO())
+    with pytest.raises(ValueError, match=r"Bad script.*") as e:
+        builder.build()
+    msg = str(e.value)
+    # We should print out the problematic script entry
+    assert "bar.bin.foo" in msg
+    # and some hint about what to do
+    assert "Hint:" in msg
+    assert 'foo = "bar.bin.foo:main"' in msg
+
+
+def test_builder_catches_bad_scripts_too_many_colon(
+    bad_scripts_too_many_colon: Poetry, tmp_venv: VirtualEnv
+) -> None:
+    builder = EditableBuilder(bad_scripts_too_many_colon, tmp_venv, NullIO())
+    with pytest.raises(ValueError, match=r"Bad script.*") as e:
+        builder.build()
+    msg = str(e.value)
+    # We should print out the problematic script entry
+    assert "foo::bar" in msg
+    # and some hint about what is wrong
+    assert "Too many" in msg

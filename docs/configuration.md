@@ -271,6 +271,23 @@ across all your projects if incorrectly set.
 
 Use parallel execution when using the new (`>=1.1.0`) installer.
 
+### `solver.lazy-wheel`
+
+**Type**: `boolean`
+
+**Default**: `true`
+
+**Environment Variable**: `POETRY_SOLVER_LAZY_WHEEL`
+
+*Introduced in 1.8.0*
+
+Do not download entire wheels to extract metadata but use
+[HTTP range requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests)
+to only download the METADATA files of wheels.
+Especially with slow network connections this setting can speed up dependency resolution significantly.
+If the cache has already been filled or the server does not support HTTP range requests,
+this setting makes no difference.
+
 ### `virtualenvs.create`
 
 **Type**: `boolean`
@@ -437,19 +454,21 @@ If set to `false`, Python version used during Poetry installation is used.
 Format string defining the prompt to be displayed when the virtual environment is activated.
 The variables `project_name` and `python_version` are available for formatting.
 
-### `repositories.<name>`
+### `repositories.<name>.url`
 
 **Type**: `string`
 
-**Environment Variable**: `POETRY_REPOSITORIES_<NAME>`
+**Environment Variable**: `POETRY_REPOSITORIES_<NAME>_URL`
 
-Set a new alternative repository. See [Repositories]({{< relref "repositories" >}}) for more information.
+Set the repository URL for `<name>`.
 
-### `http-basic.<name>`:
+See [Publishable Repositories]({{< relref "repositories#publishable-repositories" >}}) for more information.
 
-**Type**: `(string, string)`
+### `http-basic.<name>.[username|password]`:
 
-**Environment Variable**: `POETRY_HTTP_BASIC_<NAME>`
+**Type**: `string`
+
+**Environment Variables**: `POETRY_HTTP_BASIC_<NAME>_USERNAME`, `POETRY_HTTP_BASIC_<NAME>_PASSWORD`
 
 Set repository credentials (`username` and `password`) for `<name>`.
 See [Repositories - Configuring credentials]({{< relref "repositories#configuring-credentials" >}})
@@ -486,4 +505,16 @@ repository.
 
 Set client certificate for repository `<name>`.
 See [Repositories - Configuring credentials - Custom certificate authority]({{< relref "repositories#custom-certificate-authority-and-mutual-tls-authentication" >}})
+for more information.
+
+### `keyring.enabled`:
+
+**Type**: `boolean`
+
+**Default**: `true`
+
+**Environment Variable**: `POETRY_KEYRING_ENABLED`
+
+Enable the system keyring for storing credentials.
+See [Repositories - Configuring credentials]({{< relref "repositories#configuring-credentials" >}})
 for more information.

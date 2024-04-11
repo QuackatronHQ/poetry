@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import os
-import tarfile
 import tempfile
-import zipfile
 
 from contextlib import redirect_stdout
 from io import StringIO
@@ -14,16 +12,15 @@ from build import BuildBackendException
 from build import ProjectBuilder
 from build.env import IsolatedEnv as BaseIsolatedEnv
 from poetry.core.utils.helpers import temporary_directory
-from pyproject_hooks import quiet_subprocess_runner  # type: ignore[import]
+from pyproject_hooks import quiet_subprocess_runner  # type: ignore[import-untyped]
 
 from poetry.utils._compat import decode
 from poetry.utils.env import ephemeral_environment
+from poetry.utils.helpers import extractall
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from collections.abc import Collection
-    from contextlib import AbstractContextManager
 
     from poetry.repositories import RepositoryPool
     from poetry.utils.cache import ArtifactCache
@@ -132,10 +129,8 @@ class Chef:
 
         with ephemeral_environment(self._env.python) as venv:
             env = IsolatedEnv(venv, self._pool)
-            builder = ProjectBuilder(
-                directory,
-                python_executable=env.python_executable,
-                runner=quiet_subprocess_runner,
+            builder = ProjectBuilder.from_isolated_env(
+                env, directory, runner=quiet_subprocess_runner
             )
             env.install(builder.build_system_requires)
 
@@ -174,19 +169,11 @@ class Chef:
         from poetry.core.packages.utils.link import Link
 
         suffix = archive.suffix
-        context: Callable[
-            [str], AbstractContextManager[zipfile.ZipFile | tarfile.TarFile]
-        ]
-        if suffix == ".zip":  # noqa: SIM108
-            context = zipfile.ZipFile
-        else:
-            context = tarfile.open
+        zip = suffix == ".zip"
 
         with temporary_directory() as tmp_dir:
-            with context(archive.as_posix()) as archive_archive:
-                archive_archive.extractall(tmp_dir)
-
             archive_dir = Path(tmp_dir)
+            extractall(source=archive, dest=archive_dir, zip=zip)
 
             elements = list(archive_dir.glob("*"))
 

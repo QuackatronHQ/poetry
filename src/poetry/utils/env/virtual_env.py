@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from packaging.tags import Tag
-from poetry.core.constraints.version import Version
 
 from poetry.utils.env.base_env import Env
 from poetry.utils.env.script_strings import GET_BASE_PREFIX
@@ -71,16 +70,6 @@ class VirtualEnv(Env):
 
         env: dict[str, Any] = json.loads(output)
         return env
-
-    def get_pip_version(self) -> Version:
-        output = self.run_pip("--version")
-        output = output.strip()
-
-        m = re.match("pip (.+?)(?: from .+)?$", output)
-        if not m:
-            return Version.parse("0.0")
-
-        return Version.parse(m.group(1))
 
     def get_paths(self) -> dict[str, str]:
         output = self.run_python_script(GET_PATHS)
@@ -140,7 +129,7 @@ class VirtualEnv(Env):
     @cached_property
     def includes_system_site_packages(self) -> bool:
         pyvenv_cfg = self._path / "pyvenv.cfg"
-        return (
+        return pyvenv_cfg.exists() and (
             re.search(
                 r"^\s*include-system-site-packages\s*=\s*true\s*$",
                 pyvenv_cfg.read_text(),
