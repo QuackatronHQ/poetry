@@ -23,6 +23,9 @@ from poetry.plugins.plugin_manager import PluginManager
 from poetry.poetry import Poetry
 from poetry.toml.file import TOMLFile
 
+def foo():
+    return 0
+
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
