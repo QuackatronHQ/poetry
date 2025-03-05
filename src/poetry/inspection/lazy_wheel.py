@@ -312,7 +312,8 @@ class LazyFileOverHTTP(ReadOnlyIOWrapper):
         cur = self.tell()
         logger.debug("read size %d at %d from lazy file %s", size, cur, self.name)
         if size < 0:
-            assert cur <= self._length
+            if cur > self._length:
+                raise AssertionError
             download_size = self._length - cur
         elif size == 0:
             return b""
@@ -385,7 +386,8 @@ class LazyFileOverHTTP(ReadOnlyIOWrapper):
         self._request_count += 1
         head = self._session.head(self._url, headers=self._uncached_headers())
         head.raise_for_status()
-        assert head.status_code == codes.ok
+        if head.status_code != codes.ok:
+            raise AssertionError
         accepted_range = head.headers.get("Accept-Ranges", None)
         if accepted_range != "bytes":
             raise HTTPRangeRequestUnsupported(
@@ -407,7 +409,8 @@ class LazyFileOverHTTP(ReadOnlyIOWrapper):
         self._request_count += 1
         response = self._session.get(self._url, headers=headers, stream=True)
         response.raise_for_status()
-        assert int(response.headers["Content-Length"]) == (end - start + 1)
+        if int(response.headers["Content-Length"]) != (end - start + 1):
+            raise AssertionError
         return response
 
     def _fetch_content_range(self, start: int, end: int) -> Iterator[bytes]:
@@ -523,7 +526,8 @@ class LazyWheelOverHTTP(LazyFileOverHTTP):
             # the file and set up our bisect boundaries by hand.
             with self._stay():
                 response_length = int(tail.headers["Content-Length"])
-                assert response_length == min(initial_chunk_size, ret_length)
+                if response_length != min(initial_chunk_size, ret_length):
+                    raise AssertionError
                 self.seek(-response_length, io.SEEK_END)
                 # Default initial chunk size is currently 1MB, but streaming content
                 # here allows it to be set arbitrarily large.
@@ -536,7 +540,7 @@ class LazyWheelOverHTTP(LazyFileOverHTTP):
                 # MergeIntervals uses inclusive boundaries i.e. start <= x <= end.
                 init_chunk_end = ret_length - 1
                 assert self._merge_intervals is not None
-                assert ((init_chunk_start, init_chunk_end),) == tuple(
+                if ((init_chunk_start, init_chunk_end),) != tuple(
                     # NB: We expect LazyRemoteResource to reset `self._merge_intervals`
                     # just before it calls the current method, so our assertion here
                     # checks that indeed no prior overlapping intervals have
@@ -544,7 +548,8 @@ class LazyWheelOverHTTP(LazyFileOverHTTP):
                     self._merge_intervals.minimal_intervals_covering(
                         init_chunk_start, init_chunk_end
                     )
-                )
+                ):
+                    raise AssertionError
         return ret_length
 
     @staticmethod
