@@ -331,7 +331,8 @@ class Env:
 
         try:
             if call:
-                assert stderr != subprocess.PIPE
+                if stderr == subprocess.PIPE:
+                    raise AssertionError
                 subprocess.check_call(cmd, stderr=stderr, env=env, **kwargs)
                 output = ""
             else:
