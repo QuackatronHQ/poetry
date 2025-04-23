@@ -123,7 +123,7 @@ class InstalledRepository(Repository):
                 )
                 if paths:
                     is_editable_package = False
-                    for src in paths:
+                    for src in paths.copy():
                         if cls.is_vcs_package(src, env):
                             (
                                 source_type,
