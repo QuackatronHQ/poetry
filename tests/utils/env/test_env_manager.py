@@ -865,8 +865,7 @@ def test_remove_keeps_dir_if_not_deleteable(
     def err_on_rm_venv_only(path: Path, *args: Any, **kwargs: Any) -> None:
         if path.resolve() == venv_path.resolve():
             raise OSError(16, "Test error")  # ERRNO 16: Device or resource busy
-        else:
-            remove_directory(path)
+        remove_directory(path)
 
     m = mocker.patch(
         "poetry.utils.env.env_manager.remove_directory", side_effect=err_on_rm_venv_only

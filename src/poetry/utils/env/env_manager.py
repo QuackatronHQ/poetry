@@ -377,12 +377,12 @@ class EnvManager:
             raise ValueError(
                 f'<warning>Environment "{python}" does not exist.</warning>'
             )
-        else:
-            venv_path = self._poetry.config.virtualenvs_path
-            # Get all the poetry envs, even for other projects
-            env_names = [p.name for p in sorted(venv_path.glob("*-*-py*"))]
-            if python in env_names:
-                raise IncorrectEnvError(python)
+
+        venv_path = self._poetry.config.virtualenvs_path
+        # Get all the poetry envs, even for other projects
+        env_names = [p.name for p in sorted(venv_path.glob("*-*-py*"))]
+        if python in env_names:
+            raise IncorrectEnvError(python)
 
         try:
             python_version = Version.parse(python)
