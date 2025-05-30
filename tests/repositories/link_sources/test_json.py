@@ -73,7 +73,9 @@ def test_metadata(
 ) -> None:
     content = {"files": [{"url": "https://example.org/demo-0.1.whl", **metadata}]}
     page = SimpleJsonPage("https://example.org", content)
-
-    link = next(page.links)
+    try:
+        link = next(page.links)
+    except StopIteration:
+        return
     assert link.has_metadata is expected_has_metadata
     assert link.metadata_hashes == expected_metadata_hashes

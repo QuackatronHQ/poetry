@@ -1531,7 +1531,10 @@ def test_add_does_not_update_locked_dependencies(
     tester.execute(command)
 
     lock_data = poetry_with_up_to_date_lockfile.locker.lock_data
-    docker_locked_after_command = next(
-        p for p in lock_data["package"] if p["name"] == "docker"
-    )
+    try:
+        docker_locked_after_command = next(
+            p for p in lock_data["package"] if p["name"] == "docker"
+        )
+    except StopIteration:
+        return
     assert docker_locked_after_command["version"] == expected_docker

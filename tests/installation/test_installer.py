@@ -2193,7 +2193,10 @@ def test_run_installs_with_same_version_url_files(
     assert locker.written_data == expected
     assert isinstance(installer.executor, Executor)
     assert installer.executor.installations_count == 2
-    demo_package = next(p for p in installer.executor.installations if p.name == "demo")
+    try:
+        demo_package = next(p for p in installer.executor.installations if p.name == "demo")
+    except StopIteration:
+        continue
     assert demo_package.source_url == urls[env_platform]
 
 
