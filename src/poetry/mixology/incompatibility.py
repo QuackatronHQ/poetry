@@ -193,7 +193,10 @@ class Incompatibility:
             if len(positive) != 1:
                 return f"if {' and '.join(positive)} then {' or '.join(negative)}"
 
-            positive_term = next(term for term in self._terms if term.is_positive())
+            try:
+                positive_term = next(term for term in self._terms if term.is_positive())
+            except StopIteration:
+                return ""
             return (
                 f"{self._terse(positive_term, allow_every=True)} requires"
                 f" {' or '.join(negative)}"

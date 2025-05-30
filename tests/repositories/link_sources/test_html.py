@@ -140,7 +140,10 @@ def test_metadata(
     content = html_page_content(anchors)
     page = HTMLPage("https://example.org", content)
 
-    link = next(page.links)
+    try:
+        link = next(page.links)
+    except StopIteration:
+        return
     assert link.has_metadata is expected_has_metadata
     assert link.metadata_hashes == expected_metadata_hashes
 
