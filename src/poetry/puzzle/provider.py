@@ -419,107 +419,62 @@ class Provider:
         """
         package = dependency_package.package
         if package.is_root():
-            dependencies = package.all_requires
-        else:
-            dependencies = package.requires
-
-            if not package.python_constraint.allows_all(self._python_constraint):
-                transitive_python_constraint = get_python_constraint_from_marker(
-                    dependency_package.dependency.transitive_marker
-                )
-                intersection = package.python_constraint.intersect(
-                    transitive_python_constraint
-                )
-                difference = transitive_python_constraint.difference(intersection)
-
-                # The difference is only relevant if it intersects
-                # the root package python constraint
-                difference = difference.intersect(self._python_constraint)
-                if (
-                    transitive_python_constraint.is_any()
-                    or self._python_constraint.intersect(
-                        dependency_package.dependency.python_constraint
-                    ).is_empty()
-                    or intersection.is_empty()
-                    or not difference.is_empty()
-                ):
-                    return [
-                        Incompatibility(
-                            [Term(package.to_dependency(), True)],
-                            PythonCause(
-                                package.python_versions, str(self._python_constraint)
+        def complete_package(
+            self, dependency_package: DependencyPackage
+        ) -> DependencyPackage:
+            def _fetch(dep_pkg: DependencyPackage):
+                pkg = dep_pkg.package
+                dep = dep_pkg.dependency
+                if pkg.is_root():
+                    dp = dep_pkg.clone()
+                    pkg = dp.package
+                    dep = dp.dependency
+                    reqs = pkg.all_requires
+                elif pkg.is_direct_origin():
+                    dp = dep_pkg
+                    reqs = pkg.requires
+                else:
+                    try:
+                        dp = DependencyPackage(
+                            dep,
+                            self._pool.package(
+                                pkg.pretty_name,
+                                pkg.version,
+                                extras=list(dep.extras),
+                                repository_name=dep.source_name,
                             ),
                         )
-                    ]
+                    except PackageNotFound as e:
+                        try:
+                            dp = next(
+                                DependencyPackage(dep, p)
+                                for p in self.search_for_installed_packages(dep)
+                            )
+                        except StopIteration:
+                            raise e from e
 
-        _dependencies = [
-            dep
-            for dep in dependencies
-            if dep.name not in self.UNSAFE_PACKAGES
-            and self._python_constraint.allows_any(dep.python_constraint)
-            and (not self._env or dep.marker.validate(self._env.marker_env))
-        ]
-        dependencies = self._get_dependencies_with_overrides(_dependencies, package)
+                    pkg = dp.package
+                    dep = dp.dependency
+                    reqs = pkg.requires
 
-        return [
-            Incompatibility(
-                [Term(package.to_dependency(), True), Term(dep, False)],
-                DependencyCause(),
-            )
-            for dep in dependencies
-        ]
+                return dp, pkg, dep, reqs
 
-    def complete_package(
-        self, dependency_package: DependencyPackage
-    ) -> DependencyPackage:
-        package = dependency_package.package
-        dependency = dependency_package.dependency
+            dependency_package, package, dependency, requires = _fetch(dependency_package)
 
-        if package.is_root():
-            dependency_package = dependency_package.clone()
-            package = dependency_package.package
-            dependency = dependency_package.dependency
-            requires = package.all_requires
-        elif package.is_direct_origin():
-            requires = package.requires
-        else:
-            try:
-                dependency_package = DependencyPackage(
-                    dependency,
-                    self._pool.package(
-                        package.pretty_name,
-                        package.version,
-                        extras=list(dependency.extras),
-                        repository_name=dependency.source_name,
-                    ),
-                )
-            except PackageNotFound as e:
-                try:
-                    dependency_package = next(
-                        DependencyPackage(dependency, pkg)
-                        for pkg in self.search_for_installed_packages(dependency)
-                    )
-                except StopIteration:
-                    raise e from e
+            optional_dependencies = []
+            _dependencies = []
 
-            package = dependency_package.package
-            dependency = dependency_package.dependency
-            requires = package.requires
+            # If some extras/features were required, we need to
+            # add a special dependency representing the base package
+            # to the current package
+            if dependency.extras:
+                for extra in dependency.extras:
+                    if extra not in package.extras:
+                        continue
 
-        optional_dependencies = []
-        _dependencies = []
+                    optional_dependencies += [d.name for d in package.extras[extra]]
 
-        # If some extras/features were required, we need to
-        # add a special dependency representing the base package
-        # to the current package
-        if dependency.extras:
-            for extra in dependency.extras:
-                if extra not in package.extras:
-                    continue
-
-                optional_dependencies += [d.name for d in package.extras[extra]]
-
-            dependency_package = dependency_package.with_features(
+                dependency_package = dependency_package.with_features(
                 list(dependency.extras)
             )
             package = dependency_package.package
@@ -697,70 +652,108 @@ class Provider:
 
         return dependency_package
 
-    def get_locked(self, dependency: Dependency) -> DependencyPackage | None:
-        if dependency.name in self._use_latest:
+        def get_locked(self, dependency: Dependency) -> DependencyPackage | None:
+            if dependency.name in self._use_latest:
+                return None
+
+            locked = self._locked.get(dependency.name, [])
+            for dependency_package in locked:
+                package = dependency_package.package
+                if package.satisfies(dependency):
+                    if explicit_source := self._explicit_sources.get(dependency.name):
+                        dependency.source_name = explicit_source
+                    return DependencyPackage(dependency, package)
             return None
 
-        locked = self._locked.get(dependency.name, [])
-        for dependency_package in locked:
-            package = dependency_package.package
-            if package.satisfies(dependency):
-                if explicit_source := self._explicit_sources.get(dependency.name):
-                    dependency.source_name = explicit_source
-                return DependencyPackage(dependency, package)
-        return None
+        def debug(self, message: str, depth: int = 0) -> None:
+            if not (self._io.is_very_verbose() or self._io.is_debug()):
+                return
 
-    def debug(self, message: str, depth: int = 0) -> None:
-        if not (self._io.is_very_verbose() or self._io.is_debug()):
-            return
-
-        if message.startswith("fact:"):
-            if "depends on" in message:
-                m = re.match(r"fact: (.+?) depends on (.+?) \((.+?)\)", message)
-                if m is None:
-                    raise ValueError(f"Unable to parse fact: {message}")
-                m2 = re.match(r"(.+?) \((.+?)\)", m.group(1))
-                if m2:
-                    name = m2.group(1)
-                    version = f" (<c2>{m2.group(2)}</c2>)"
+            def _format_fact(msg: str) -> str:
+                if "depends on" in msg:
+                    m = re.match(r"fact: (.+?) depends on (.+?) \((.+?)\)", msg)
+                    if m is None:
+                        raise ValueError(f"Unable to parse fact: {msg}")
+                    m2 = re.match(r"(.+?) \((.+?)\)", m.group(1))
+                    if m2:
+                        name = m2.group(1)
+                        version = f" (<c2>{m2.group(2)}</c2>)"
+                    else:
+                        name = m.group(1)
+                        version = ""
+                    return (
+                        f"<fg=blue>fact</>: <c1>{name}</c1>{version} "
+                        f"depends on <c1>{m.group(2)}</c1> (<c2>{m.group(3)}</c2>)"
+                    )
+                elif " is " in msg:
+                    return re.sub(
+                        r"fact: (.+) is (.+)",
+                        "<fg=blue>fact</>: <c1>\\1</c1> is <c2>\\2</c2>",
+                        msg,
+                    )
                 else:
-                    name = m.group(1)
-                    version = ""
+                    msg2 = re.sub(
+                        r"(?<=: )(.+?) \((.+?)\)", "<c1>\\1</c1> (<c2>\\2</c2>)", msg
+                    )
+                    return f"<fg=blue>fact</>: {msg2.split('fact: ')[1]}"
 
-                message = (
-                    f"<fg=blue>fact</>: <c1>{name}</c1>{version} "
-                    f"depends on <c1>{m.group(2)}</c1> (<c2>{m.group(3)}</c2>)"
+            def _format_selecting(msg: str) -> str:
+                return re.sub(
+                    r"selecting (.+?) \((.+?)\)",
+                    "<fg=blue>selecting</> <c1>\\1</c1> (<c2>\\2</c2>)",
+                    msg,
                 )
-            elif " is " in message:
-                message = re.sub(
-                    "fact: (.+) is (.+)",
-                    "<fg=blue>fact</>: <c1>\\1</c1> is <c2>\\2</c2>",
-                    message,
+
+            def _format_derived(msg: str) -> str:
+                m = re.match(r"derived: (.+?) \((.+?)\)$", msg)
+                if m:
+                    return (
+                        f"<fg=blue>derived</>: <c1>{m.group(1)}</c1>"
+                        f" (<c2>{m.group(2)}</c2>)"
+                    )
+                return f"<fg=blue>derived</>: <c1>{msg.split('derived: ')[1]}</c1>"
+
+            def _format_conflict(msg: str) -> str:
+                m = re.match(r"conflict: (.+?) depends on (.+?) \((.+?)\)", msg)
+                if m:
+                    m2 = re.match(r"(.+?) \((.+?)\)", m.group(1))
+                    if m2:
+                        name = m2.group(1)
+                        version = f" (<c2>{m2.group(2)}</c2>)"
+                    else:
+                        name = m.group(1)
+                        version = ""
+                    return (
+                        f"<fg=red;options=bold>conflict</>: <c1>{name}</c1>{version} "
+                        f"depends on <c1>{m.group(2)}</c1> (<c2>{m.group(3)}</c2>)"
+                    )
+                return "<fg=red;options=bold>conflict</>:" f" {msg.split('conflict: ')[1]}"
+
+            for prefix, handler in (
+                ("fact:", _format_fact),
+                ("selecting ", _format_selecting),
+                ("derived:", _format_derived),
+                ("conflict:", _format_conflict),
+            ):
+                if message.startswith(prefix):
+                    message = handler(message)
+                    break
+
+            message = message.replace("! ", "<error>!</error> ")
+
+            if self.is_debugging():
+                debug_info = str(message)
+                debug_info = (
+                    "\n".join(
+                        [
+                            f"<debug>{str(depth).rjust(4)}:</debug> {s}"
+                            for s in debug_info.split("\n")
+                        ]
+                    )
+                    + "\n"
                 )
-            else:
-                message = re.sub(
-                    r"(?<=: )(.+?) \((.+?)\)", "<c1>\\1</c1> (<c2>\\2</c2>)", message
-                )
-                message = f"<fg=blue>fact</>: {message.split('fact: ')[1]}"
-        elif message.startswith("selecting "):
-            message = re.sub(
-                r"selecting (.+?) \((.+?)\)",
-                "<fg=blue>selecting</> <c1>\\1</c1> (<c2>\\2</c2>)",
-                message,
-            )
-        elif message.startswith("derived:"):
-            m = re.match(r"derived: (.+?) \((.+?)\)$", message)
-            if m:
-                message = (
-                    f"<fg=blue>derived</>: <c1>{m.group(1)}</c1>"
-                    f" (<c2>{m.group(2)}</c2>)"
-                )
-            else:
-                message = (
-                    f"<fg=blue>derived</>: <c1>{message.split('derived: ')[1]}</c1>"
-                )
-        elif message.startswith("conflict:"):
-            m = re.match(r"conflict: (.+?) depends on (.+?) \((.+?)\)", message)
+
+                self._io.write(debug_info)
             if m:
                 m2 = re.match(r"(.+?) \((.+?)\)", m.group(1))
                 if m2:
